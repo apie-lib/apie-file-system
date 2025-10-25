@@ -3,9 +3,11 @@ namespace Apie\ApieFileSystem\Virtual;
 
 use Apie\ApieFileSystem\Lists\VirtualFileMap;
 use Apie\Common\ActionDefinitions\GetResourceListActionDefinition;
+use Apie\Core\BoundedContext\BoundedContextId;
 use Apie\Core\Context\ApieContext;
 use Apie\Core\ContextConstants;
 use Apie\Core\Datalayers\ApieDatalayer;
+use Apie\Serializer\Serializer;
 
 class GetResourceListFolder implements VirtualFolderInterface
 {
@@ -22,25 +24,38 @@ class GetResourceListFolder implements VirtualFolderInterface
 
     public function getChild(string $name): VirtualFileInterface|VirtualFolderInterface|null
     {
+        if (is_numeric($name)) {
+            $datalayer = $this->apieContext->getContext(ApieDatalayer::class, false);
+            $serializer = $this->apieContext->getContext(Serializer::class, false);
+            if ($datalayer instanceof ApieDatalayer && $serializer instanceof Serializer) {
+                $list = $datalayer->all(
+                    $this->actionDefinition->getResourceName(),
+                    $this->apieContext->getContext(BoundedContextId::class, false)
+                );
+                return new GetResourceListPaginationFolder($list, (int) $name, $serializer, $this->apieContext);
+            }
+        }
         return null;
     }
 
     public function getChildren(): VirtualFileMap
     {
         $datalayer = $this->apieContext->getContext(ApieDatalayer::class, false);
-        if ($datalayer instanceof ApieDatalayer) {
+        $serializer = $this->apieContext->getContext(Serializer::class, false);
+        if ($datalayer instanceof ApieDatalayer && $serializer instanceof Serializer) {
             $list = $datalayer->all(
                 $this->actionDefinition->getResourceName(),
-                $this->apieContext->getContext(ContextConstants::BOUNDED_CONTEXT_ID, false)
+                $this->apieContext->getContext(BoundedContextId::class, false)
             );
             $totalCount = $list->getTotalCount();
             $files = [];
             for ($i = 0; $i < $totalCount; $i+= GetResourceListPaginationFolder::ITEMS_PER_PAGE) {
                 $page = (int) floor($i / GetResourceListPaginationFolder::ITEMS_PER_PAGE);
-                $files[$page] = new GetResourceListPaginationFolder($list, $page);
+                $files[$page] = new GetResourceListPaginationFolder($list, $page, $serializer, $this->apieContext);
             }
             return new VirtualFileMap($files);
         }
+        
         return new VirtualFileMap();
     }
 }
